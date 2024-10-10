@@ -35,5 +35,22 @@ def register_user(call):
                               message_id=call.message.message_id, text="Аккаунт создан")
 
 
+@bot.message_handler(commands=['cars'])
+def get_cars(message):
+    user_id = message.from_user.id
+    keyboard = types.InlineKeyboardMarkup()
+    response = requests.get(API_URL_CARS)
+    cars = response.json()
+    filtered_cars = filter(
+        lambda user: user['user']['username'] == str(user_id), cars)
+    found_cars = list(filtered_cars)
+    for car in found_cars:
+        button = types.InlineKeyboardButton(
+            text=f"{car['make']} {car['model']} ({car['year']})", callback_data=str(car['id']))
+        keyboard.add(button)
+    bot.send_message(message.chat.id, f"Выберите машину: ",
+                     reply_markup=keyboard)
+
+
 if __name__ == '__main__':
     bot.polling(none_stop=True)

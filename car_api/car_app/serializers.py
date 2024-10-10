@@ -3,7 +3,15 @@ from .models import Car, Service, Note, Purchase, GoodPurchase
 from django.contrib.auth.models import User
 
 
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['username']
+
+
 class CarSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+
     class Meta:
         model = Car
         fields = '__all__'
