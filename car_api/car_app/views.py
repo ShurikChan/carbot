@@ -1,6 +1,6 @@
 from django.shortcuts import render
 from .serializers import UserSerializer
-from rest_framework import viewsets, generics
+from rest_framework import viewsets
 from .models import Car, Service, Note, Purchase, GoodPurchase
 from .serializers import CarSerializer, ServiceSerializer, NoteSerializer, PurchaseSerializer, GoodPurchaseSerializer
 from django.contrib.auth.models import User

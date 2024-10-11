@@ -10,11 +10,21 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class CarSerializer(serializers.ModelSerializer):
-    user = UserSerializer(read_only=True)
+    user = serializers.CharField()
 
     class Meta:
         model = Car
         fields = '__all__'
+
+    def create(self, validated_data):
+        username = validated_data.pop('user')
+        try:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            raise serializers.ValidationError(
+                {'user': 'User with this username does not exist.'})
+        car = Car.objects.create(user=user, **validated_data)
+        return car
 
 
 class ServiceSerializer(serializers.ModelSerializer):

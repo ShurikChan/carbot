@@ -7,6 +7,49 @@ from config import *
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode=None)
 
 
+@bot.callback_query_handler(func=lambda call: call.data == "add_car")
+def add_car(call):
+    bot.send_message(call.message.chat.id, "Введите марку машины:")
+    bot.register_next_step_handler(call.message, get_make)
+
+
+
+def get_make(message):
+    make = message.text
+    bot.send_message(message.chat.id, "Введите модель машины:")
+    bot.register_next_step_handler(message, get_model, make)
+
+
+def get_model(message, make):
+    model = message.text
+    bot.send_message(message.chat.id, "Введите год выпуска машины:")
+    bot.register_next_step_handler(message, get_year, make, model)
+
+
+def get_year(message, make, model):
+    mileage = message.text
+    bot.send_message(message.chat.id, "Введите примерный пробег машины:")
+    bot.register_next_step_handler(message, get_mileage, make, model, mileage)
+
+
+def get_mileage(message, make, model, year):
+    mileage = message.text
+    data = {
+        "user": message.from_user.id,
+        "make": make,
+        "model": model,
+        "year": year,
+        "mileage": mileage
+    }
+
+    response = requests.post(API_URL_CARS, json=data)
+    if response.status_code == 201:
+        bot.send_message(message.chat.id, "Машина успешно добавлена!")
+    else:
+        bot.send_message(
+            message.chat.id, "Произошла ошибка при добавлении машины.")
+
+
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     keyboard = types.InlineKeyboardMarkup()
@@ -42,14 +85,22 @@ def get_cars(message):
     response = requests.get(API_URL_CARS)
     cars = response.json()
     filtered_cars = filter(
-        lambda user: user['user']['username'] == str(user_id), cars)
+        lambda user: user['user'] == str(user_id), cars)
     found_cars = list(filtered_cars)
-    for car in found_cars:
+    if found_cars:
+        for car in found_cars:
+            button = types.InlineKeyboardButton(
+                text=f"{car['make']} {car['model']} ({car['year']})", callback_data=str(car['id']))
+            keyboard.add(button)
+        bot.send_message(message.chat.id, f"Выберите машину: ",
+                         reply_markup=keyboard)
+    else:
+        keyboard = types.InlineKeyboardMarkup()
         button = types.InlineKeyboardButton(
-            text=f"{car['make']} {car['model']} ({car['year']})", callback_data=str(car['id']))
+            text="Добавить машину", callback_data="add_car")
         keyboard.add(button)
-    bot.send_message(message.chat.id, f"Выберите машину: ",
-                     reply_markup=keyboard)
+        bot.send_message(message.chat.id, text="У вас нет внесённых машин",
+                         reply_markup=keyboard)
 
 
 if __name__ == '__main__':
