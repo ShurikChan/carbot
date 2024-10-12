@@ -13,7 +13,6 @@ def add_car(call):
     bot.register_next_step_handler(call.message, get_make)
 
 
-
 def get_make(message):
     make = message.text
     bot.send_message(message.chat.id, "Введите модель машины:")
@@ -50,13 +49,22 @@ def get_mileage(message, make, model, year):
             message.chat.id, "Произошла ошибка при добавлении машины.")
 
 
-@bot.message_handler(commands=['start', 'help'])
+def add_car_button(message):
+    keyboard = types.InlineKeyboardMarkup()
+    button = types.InlineKeyboardButton(
+        text="+", callback_data="add_car")
+    keyboard.add(button)
+    return bot.send_message(message.chat.id, text="Добавить авто",
+                            reply_markup=keyboard)
+
+
+@bot.message_handler(commands=['start'])
 def send_welcome(message):
     keyboard = types.InlineKeyboardMarkup()
     button = types.InlineKeyboardButton(
-        text="Register", callback_data="register")
+        text="Начать работу", callback_data="register")
     keyboard.add(button)
-    bot.reply_to(message, "Howdy, how are you doing?",
+    bot.reply_to(message, "Добро пожаловать в бота для автолюбителей, нажмите кнопку ниже, чтобы приступить к работе",
                  reply_markup=keyboard)
 
 
@@ -70,12 +78,12 @@ def register_user(call):
     found_users = list(filtered_users)
     if found_users:
         bot.edit_message_text(chat_id=call.message.chat.id,
-                              message_id=call.message.message_id, text="Такой пользователь уже зарегистрирован")
+                              message_id=call.message.message_id, text="Доступные команды - /cars")
     else:
         data = {"username": user_id, "password": user_id}  # Имя = Паролю
         requests.post(API_URL_REG, json=data)
         bot.edit_message_text(chat_id=call.message.chat.id,
-                              message_id=call.message.message_id, text="Аккаунт создан")
+                              message_id=call.message.message_id, text="Доступные команды - /cars")
 
 
 @bot.message_handler(commands=['cars'])
@@ -94,13 +102,10 @@ def get_cars(message):
             keyboard.add(button)
         bot.send_message(message.chat.id, f"Выберите машину: ",
                          reply_markup=keyboard)
+        add_car_button(message)
     else:
-        keyboard = types.InlineKeyboardMarkup()
-        button = types.InlineKeyboardButton(
-            text="Добавить машину", callback_data="add_car")
-        keyboard.add(button)
-        bot.send_message(message.chat.id, text="У вас нет внесённых машин",
-                         reply_markup=keyboard)
+        bot.send_message(message.chat.id, text="Автомобилей пока нет")
+        add_car_button(message)
 
 
 if __name__ == '__main__':
