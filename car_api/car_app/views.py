@@ -53,3 +53,6 @@ class CreateUserView(viewsets.ModelViewSet):
 
         headers = self.get_success_headers(serializer.data)
         return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
+
+
+
