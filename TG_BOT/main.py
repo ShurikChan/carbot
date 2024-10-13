@@ -1,112 +1,153 @@
 import telebot
-from telebot import types
 import requests
-from config import *
+from telebot import types
+import config
 
+bot = telebot.TeleBot(config.BOT_TOKEN)
 
-bot = telebot.TeleBot(BOT_TOKEN, parse_mode=None)
-
-
-@bot.callback_query_handler(func=lambda call: call.data == "add_car")
-def add_car(call):
-    bot.send_message(call.message.chat.id, "Введите марку машины:")
-    bot.register_next_step_handler(call.message, get_make)
-
-
-def get_make(message):
-    make = message.text
-    bot.send_message(message.chat.id, "Введите модель машины:")
-    bot.register_next_step_handler(message, get_model, make)
-
-
-def get_model(message, make):
-    model = message.text
-    bot.send_message(message.chat.id, "Введите год выпуска машины:")
-    bot.register_next_step_handler(message, get_year, make, model)
-
-
-def get_year(message, make, model):
-    mileage = message.text
-    bot.send_message(message.chat.id, "Введите примерный пробег машины:")
-    bot.register_next_step_handler(message, get_mileage, make, model, mileage)
-
-
-def get_mileage(message, make, model, year):
-    mileage = message.text
-    data = {
-        "user": message.from_user.id,
-        "make": make,
-        "model": model,
-        "year": year,
-        "mileage": mileage
-    }
-
-    response = requests.post(API_URL_CARS, json=data)
-    if response.status_code == 201:
-        bot.send_message(message.chat.id, "Машина успешно добавлена!")
-    else:
-        bot.send_message(
-            message.chat.id, "Произошла ошибка при добавлении машины.")
-
-
-def add_car_button(message):
-    keyboard = types.InlineKeyboardMarkup()
-    button = types.InlineKeyboardButton(
-        text="+", callback_data="add_car")
-    keyboard.add(button)
-    return bot.send_message(message.chat.id, text="Добавить авто",
-                            reply_markup=keyboard)
-
+# Словарь для хранения информации о пользователе
+user_data = {}
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    keyboard = types.InlineKeyboardMarkup()
-    button = types.InlineKeyboardButton(
-        text="Начать работу", callback_data="register")
-    keyboard.add(button)
-    bot.reply_to(message, "Добро пожаловать в бота для автолюбителей, нажмите кнопку ниже, чтобы приступить к работе",
-                 reply_markup=keyboard)
+    chat_id = message.chat.id
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    start_button = types.KeyboardButton("Начать")
+    markup.add(start_button)
 
+    bot.send_message(chat_id,
+                     "Добро пожаловать в бота для автолюбителей! Нажмите кнопку ниже, чтобы приступить к работе.",
+                     reply_markup=markup)
 
-@bot.callback_query_handler(func=lambda call: call.data == "register")
-def register_user(call):
-    user_id = call.from_user.id
-    response = requests.get(API_URL_REG)
-    users = response.json()
-    filtered_users = filter(
-        lambda user: user['username'] == str(user_id), users)
-    found_users = list(filtered_users)
-    if found_users:
-        bot.edit_message_text(chat_id=call.message.chat.id,
-                              message_id=call.message.message_id, text="Доступные команды - /cars")
+@bot.message_handler(func=lambda message: message.text == "Начать")
+def register_or_get_cars(message):
+    chat_id = message.chat.id
+    username = message.from_user.username
+
+    # Проверяем, есть ли пользователь в базе данных по имени пользователя
+    try:
+        response = requests.get(f"{config.API_URL_REG}?username={username}")
+
+        print(f"Проверка пользователя: {username}, Статус код: {response.status_code}")
+        if response.status_code == 200:
+            users = response.json()
+            found_users = [user for user in users if user['username'] == username]
+
+            if found_users:
+                user_id = found_users[0]['id']
+                user_data[chat_id] = {'user_id': user_id, 'username': username}
+                get_user_cars(message, user_id)
+            else:
+                # Пользователь не найден, регистрируем нового пользователя
+                register_user(username, chat_id, message)
+        else:
+            bot.send_message(chat_id, "Ошибка при проверке пользователя.")
+    except Exception as e:
+        bot.send_message(chat_id, f"Ошибка: {str(e)}")
+
+def register_user(username, chat_id, message):
+    try:
+        # Отправляем запрос на регистрацию
+        response = requests.post(config.API_URL_REG, json={'username': username, 'password': username})
+
+        if response.status_code == 201:
+            user_id = response.json().get('id')
+            user_data[chat_id] = {'user_id': user_id, 'username': username}
+            bot.send_message(chat_id, "Вы успешно зарегистрированы!")
+            get_user_cars(message, user_id)  # Получаем машины пользователя
+        else:
+            bot.send_message(chat_id, "Произошла ошибка при регистрации.")
+    except Exception as e:
+        bot.send_message(chat_id, f"Ошибка: {str(e)}")
+
+def get_user_cars(message, user_id):
+    chat_id = message.chat.id
+
+    # Выполняем запрос на получение машин пользователя
+    url = f"{config.API_URL_CARS}?user_id={user_id}"
+    print(f"Получение машин для пользователя ID: {user_id}, URL: {url}")
+
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            cars = response.json()
+            if cars:
+                markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+                for car in cars:
+                    car_button = types.KeyboardButton(f"{car['make']} {car['model']} ({car['year']})")
+                    markup.add(car_button)
+
+                # Добавляем кнопку "Добавить машину" после вывода машин
+                add_car_button = types.KeyboardButton("Добавить машину")
+                markup.add(add_car_button)
+                bot.send_message(chat_id, "Выберите машину:", reply_markup=markup)
+            else:
+                show_add_car_button(chat_id)
+        else:
+            bot.send_message(chat_id, "Произошла ошибка при получении списка машин.")
+    except Exception as e:
+        bot.send_message(chat_id, f"Ошибка: {str(e)}")
+
+def show_add_car_button(chat_id):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    add_car_button = types.KeyboardButton("Добавить машину")
+    markup.add(add_car_button)
+    bot.send_message(chat_id, "У вас пока нет машин. Вы можете добавить машину.", reply_markup=markup)
+
+@bot.message_handler(func=lambda message: message.text == "Добавить машину")
+def add_car(message):
+    chat_id = message.chat.id
+
+    if chat_id in user_data and 'user_id' in user_data[chat_id]:
+        user_id = user_data[chat_id]['user_id']
+        bot.send_message(chat_id, "Введите марку машины:")
+        bot.register_next_step_handler(message, lambda m: get_car_details(m, user_id))
     else:
-        data = {"username": user_id, "password": user_id}  # Имя = Паролю
-        requests.post(API_URL_REG, json=data)
-        bot.edit_message_text(chat_id=call.message.chat.id,
-                              message_id=call.message.message_id, text="Доступные команды - /cars")
+        bot.send_message(chat_id, "Ошибка: пользователь не найден.")
+
+def get_car_details(message, user_id):
+    make = message.text
+    bot.send_message(message.chat.id, "Введите модель машины:")
+    bot.register_next_step_handler(message, lambda m: get_model(m, make, user_id))
+
+def get_model(message, make, user_id):
+    model = message.text
+    bot.send_message(message.chat.id, "Введите год выпуска (например, 2020):")
+    bot.register_next_step_handler(message, lambda m: get_year(m, make, model, user_id))
+
+def get_year(message, make, model, user_id):
+    year = message.text
+    bot.send_message(message.chat.id, "Введите пробег (например, 50000):")
+    bot.register_next_step_handler(message, lambda m: get_mileage(m, make, model, year, user_id))
+
+def get_mileage(message, make, model, year, user_id):
+    mileage = message.text
+    bot.send_message(message.chat.id, "Введите последнее обслуживание (например, 2023-05-01):")
+    bot.register_next_step_handler(message, lambda m: process_last_oil(m, make, model, year, mileage, user_id))
 
 
-@bot.message_handler(commands=['cars'])
-def get_cars(message):
-    user_id = message.from_user.id
-    keyboard = types.InlineKeyboardMarkup()
-    response = requests.get(API_URL_CARS)
-    cars = response.json()
-    filtered_cars = filter(
-        lambda user: user['user'] == str(user_id), cars)
-    found_cars = list(filtered_cars)
-    if found_cars:
-        for car in found_cars:
-            button = types.InlineKeyboardButton(
-                text=f"{car['make']} {car['model']} ({car['year']})", callback_data=str(car['id']))
-            keyboard.add(button)
-        bot.send_message(message.chat.id, f"Выберите машину: ",
-                         reply_markup=keyboard)
-        add_car_button(message)
+def process_last_oil(message, make, model, year, mileage, user_id):
+    last_oil = message.text
+    data = {
+        "make": make,
+        "model": model,
+        "year": year,
+        "mileage": mileage,
+        "last_oil": last_oil,
+        "user": user_id
+    }
+
+    # Добавляем машину
+    response = requests.post(config.API_URL_CARS, json=data)
+    print(f"Добавление машины: {response.status_code}, Ответ: {response.json()}")
+
+    if response.status_code == 201:
+        bot.send_message(message.chat.id, "Машина успешно добавлена!")
+        # Теперь получаем машины для пользователя после добавления
+        get_user_cars(message, user_id)
     else:
-        bot.send_message(message.chat.id, text="Автомобилей пока нет")
-        add_car_button(message)
+        bot.send_message(message.chat.id, "Ошибка при добавлении машины.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     bot.polling(none_stop=True)

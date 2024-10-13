@@ -1,30 +1,26 @@
 from rest_framework import serializers
-from .models import Car, Service, Note, Purchase, GoodPurchase
+from .models import *
 from django.contrib.auth.models import User
 
 
 class UserSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True)
+
     class Meta:
         model = User
-        fields = ['username']
+        fields = ['username', 'password', 'id']
+
+    def create(self, validated_data):
+        user = User(username=validated_data['username'])
+        user.set_password(validated_data['password'])  # Устанавливаем зашифрованный пароль
+        user.save()
+        return user
 
 
 class CarSerializer(serializers.ModelSerializer):
-    user = serializers.CharField()
-
     class Meta:
         model = Car
         fields = '__all__'
-
-    def create(self, validated_data):
-        username = validated_data.pop('user')
-        try:
-            user = User.objects.get(username=username)
-        except User.DoesNotExist:
-            raise serializers.ValidationError(
-                {'user': 'User with this username does not exist.'})
-        car = Car.objects.create(user=user, **validated_data)
-        return car
 
 
 class ServiceSerializer(serializers.ModelSerializer):
@@ -39,19 +35,17 @@ class NoteSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-class PurchaseSerializer(serializers.ModelSerializer):
+class OilSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Purchase
+        model = Oil_service
+        fields = '__all__'
+
+class GoodSpareSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = GoodSpare
         fields = '__all__'
 
 
-class GoodPurchaseSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = GoodPurchase
-        fields = '__all__'
 
 
-class UserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ['username', 'password']

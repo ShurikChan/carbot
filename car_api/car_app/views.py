@@ -1,15 +1,19 @@
-from django.shortcuts import render
-from .serializers import UserSerializer
 from rest_framework import viewsets
-from .models import Car, Service, Note, Purchase, GoodPurchase
-from .serializers import CarSerializer, ServiceSerializer, NoteSerializer, PurchaseSerializer, GoodPurchaseSerializer
+from .serializers import *
 from django.contrib.auth.models import User
-
+from django.shortcuts import get_object_or_404
+from rest_framework.response import Response
+from rest_framework import status
 
 class CarViewSet(viewsets.ModelViewSet):
     queryset = Car.objects.all()
     serializer_class = CarSerializer
 
+    def get_queryset(self):
+        user_id = self.request.query_params.get('user_id')
+        if user_id:
+            return Car.objects.filter(user_id=user_id)
+        return Car.objects.none()
 
 class ServiceViewSet(viewsets.ModelViewSet):
     queryset = Service.objects.all()
@@ -21,20 +25,31 @@ class NoteViewSet(viewsets.ModelViewSet):
     serializer_class = NoteSerializer
 
 
-class PurchaseViewSet(viewsets.ModelViewSet):
-    queryset = Purchase.objects.all()
-    serializer_class = PurchaseSerializer
+class OilViewSet(viewsets.ModelViewSet):
+    queryset = Oil_service.objects.all()
+    serializer_class = OilSerializer
 
 
-class GoodPurchaseViewSet(viewsets.ModelViewSet):
-    queryset = GoodPurchase.objects.all()
-    serializer_class = GoodPurchaseSerializer
+class GoodSpareViewSet(viewsets.ModelViewSet):
+    queryset = GoodSpare.objects.all()
+    serializer_class = GoodSpareSerializer
 
 
 class CreateUserView(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
 
-    def perform_create(self, serializer):
-        password = serializer.validated_data['password']
-        user = serializer.save(password=password)
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save(password=serializer.validated_data['password'])
+
+        # Формируем ответ с данными пользователя, включая ID
+        response_data = {
+            'id': user.id,
+            'username': user.username,
+            'password': 'password123',  # Вы можете не возвращать пароль, это для примера
+        }
+
+        headers = self.get_success_headers(serializer.data)
+        return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
