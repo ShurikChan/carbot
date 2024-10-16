@@ -21,7 +21,7 @@ class Oil_service(models.Model):
     price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name ='Цена')
     name_oil = models.CharField(max_length=20, verbose_name='Название масла')
     next_millage_oil = models.IntegerField(verbose_name='Следущая замена масла')
-    image = models.ImageField(upload_to='oil_images/')
+    image = models.ImageField(upload_to='oil_images/',blank=True, null=True)
     date = models.DateTimeField(auto_now_add=True)
 
 # Модель сервиса и запчастей
