@@ -3,6 +3,7 @@ import requests
 from telebot import types
 import config
 from datetime import datetime
+import os
 
 bot = telebot.TeleBot(config.BOT_TOKEN)
 
@@ -101,7 +102,7 @@ def show_add_car_button(chat_id):
     markup.add(add_car_button)
     bot.send_message(chat_id, "У вас пока нет машин. Вы можете добавить машину.", reply_markup=markup)
 
-
+# Добавление машины
 @bot.message_handler(func=lambda message: message.text == "Добавить машину")
 def add_car(message):
     chat_id = message.chat.id
@@ -160,7 +161,7 @@ def process_last_oil(message, make, model, year, mileage, user_id):
     else:
         bot.send_message(message.chat.id, "Ошибка при добавлении машины.")
 
-
+# Выбор нужного автомобиля
 @bot.message_handler(func=lambda message: message.text in [f"{car['make']} {car['model']} ({car['year']})" for car in
                                                            user_data.get(message.chat.id, {}).get('cars', [])])
 def select_car(message):
@@ -170,17 +171,13 @@ def select_car(message):
     # Сохраняем выбранный автомобиль
     if chat_id not in user_data:
         user_data[chat_id] = {}
-    user_data[chat_id]['selected_car'] = selected_car  # Сохраняем выбранный автомобиль
-
+    user_data[chat_id]['selected_car'] = selected_car
     # Извлекаем данные автомобиля из базы данных
     car = get_car_details_from_db(selected_car, chat_id)
-
     if car:
         # Отправляем данные автомобиля
         bot.send_message(chat_id,
                          f"Выбранный автомобиль:\nМарка: {car['make']}\nМодель: {car['model']}\nГод: {car['year']}\nПробег: {car['mileage']}\nПоследнее обслуживание: {car['last_oil']}")
-
-        # Создаем кнопки для действий
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         markup.add(types.KeyboardButton("Замена масла"))
         markup.add(types.KeyboardButton("Сервис"))
@@ -191,8 +188,6 @@ def select_car(message):
         bot.send_message(chat_id, "Выберите действие:", reply_markup=markup)
     else:
         bot.send_message(chat_id, "Ошибка: автомобиль не найден.")
-
-
 
 @bot.message_handler(func=lambda message: message.text == "Назад")
 def go_back_to_cars(message):
@@ -220,7 +215,7 @@ def oil_change(message):
             markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
             markup.add(types.KeyboardButton("Добавить замену масла"))
             markup.add(types.KeyboardButton("История замены масла"))
-            markup.add(types.KeyboardButton("Общая сумма"))
+            markup.add(types.KeyboardButton("Общая сумма затрат на масло"))
             markup.add(types.KeyboardButton("Назад"))
 
             bot.send_message(chat_id,
@@ -231,6 +226,147 @@ def oil_change(message):
             bot.send_message(chat_id, "Ошибка: выбранный автомобиль не найден.")
     else:
         bot.send_message(chat_id, "Ошибка: выбранный автомобиль не найден.")
+
+
+@bot.message_handler(func=lambda message: message.text == "Сервис")
+def service(message):
+    chat_id = message.chat.id
+
+    # Проверяем, есть ли выбранный автомобиль
+    if chat_id in user_data and 'selected_car' in user_data[chat_id]:
+        selected_car = user_data[chat_id]['selected_car']
+
+        # Получаем информацию о последнем обслуживании
+        car = get_car_details_from_db(selected_car, chat_id)
+
+        if car:
+            last_oil = car['last_oil']
+            markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            markup.add(types.KeyboardButton("Добавить сервис"))
+            markup.add(types.KeyboardButton("История сервиса"))
+            markup.add(types.KeyboardButton("Общая сумма сервиса"))
+            markup.add(types.KeyboardButton("Назад"))
+
+            bot.send_message(chat_id,
+                             f"Сервис для автомобиля {car['make']} {car['model']}",
+                             reply_markup=markup)
+            bot.send_message(chat_id, "Выберите действие:", reply_markup=markup)
+        else:
+            bot.send_message(chat_id, "Ошибка: выбранный автомобиль не найден.")
+    else:
+        bot.send_message(chat_id, "Ошибка: выбранный автомобиль не найден.")
+
+
+@bot.message_handler(func=lambda message: message.text == "Добавить сервис")
+def prompt_add_service(message):
+    chat_id = message.chat.id
+
+    if chat_id in user_data and 'selected_car' in user_data[chat_id]:
+        selected_car = user_data[chat_id]['selected_car']
+        car = get_car_details_from_db(selected_car, chat_id)
+
+        if car:
+            bot.send_message(chat_id, "Введите название запчасти:")
+            bot.register_next_step_handler(message, lambda m: get_spare_part(m, car))
+        else:
+            bot.send_message(chat_id, "Ошибка: выбранный автомобиль не найден.")
+    else:
+        bot.send_message(chat_id, "Ошибка: выбранный автомобиль не найден.")
+
+
+def get_spare_part(message, car):
+    spare_part = message.text
+    bot.send_message(message.chat.id, "Введите цену запчасти:")
+    bot.register_next_step_handler(message, lambda m: get_price_spare(m, car, spare_part))
+
+
+def get_price_spare(message, car, spare_part):
+    try:
+        price_spare = float(message.text)
+        bot.send_message(message.chat.id, "Введите цену работы:")
+        bot.register_next_step_handler(message, lambda m: get_price_work(m, car, spare_part, price_spare))
+    except ValueError:
+        bot.send_message(message.chat.id, "Ошибка: введите корректную цену.")
+        bot.register_next_step_handler(message, lambda m: get_price_spare(m, car, spare_part))
+
+
+def get_price_work(message, car, spare_part, price_spare):
+    try:
+        price_work = float(message.text)
+        bot.send_message(message.chat.id, "Загрузите изображение квитанции или отправьте 'Нет', чтобы пропустить.")
+        bot.register_next_step_handler(message, lambda m: process_service_image(m, car, spare_part, price_spare, price_work))
+    except ValueError:
+        bot.send_message(message.chat.id, "Ошибка: введите корректную цену.")
+        bot.register_next_step_handler(message, lambda m: get_price_work(m, car, spare_part, price_spare))
+
+
+def process_service_image(message, car, spare_part, price_spare, price_work):
+    url = 'http://127.0.0.1:8000/services/'  # URL для обработки сервиса
+
+    bot_data = {
+        'car_id': car['id'],
+        'spare_part': spare_part,
+        'price_spare': price_spare,
+        'price_work': price_work
+    }
+
+    # Проверяем, отправил ли пользователь изображение
+    if message.content_type == 'photo':
+        try:
+            # Получаем файл изображения
+            file_info = bot.get_file(message.photo[-1].file_id)
+            downloaded_file = bot.download_file(file_info.file_path)
+
+            file_extension = file_info.file_path.split('.')[-1]
+            filename = f"service_receipt.{file_extension}"
+
+            # Сохраняем изображение локально
+            with open(filename, 'wb') as new_file:
+                new_file.write(downloaded_file)
+
+            # Открываем изображение для отправки
+            with open(filename, 'rb') as image_file:
+                files = {'images': (filename, image_file, f"image/{file_extension}")}
+                data = {
+                    'car': bot_data['car_id'],
+                    'spare_part': bot_data['spare_part'],
+                    'price_spare': bot_data['price_spare'],
+                    'price_work': bot_data['price_work'],
+                }
+
+                # Отправляем данные на сервер
+                response = requests.post(url, data=data, files=files)
+                print(f"Response Status Code: {response.status_code}")
+                print(f"Response Text: {response.text}")
+
+                if response.status_code == 201:
+                    bot.send_message(message.chat.id, "Сервис успешно добавлен с изображением!")
+                else:
+                    bot.send_message(message.chat.id, f"Ошибка: {response.status_code}. Ответ: {response.text}")
+        except Exception as e:
+            bot.send_message(message.chat.id, f"Ошибка при обработке изображения: {e}")
+            print(f"Ошибка при обработке изображения: {e}")
+    elif message.text.lower() == 'нет':
+        # Если пользователь не отправляет изображение, отправляем данные без файла
+        data = {
+            'car': bot_data['car_id'],
+            'spare_part': bot_data['spare_part'],
+            'price_spare': bot_data['price_spare'],
+            'price_work': bot_data['price_work'],
+        }
+        try:
+            response = requests.post(url, json=data)
+            print(f"Response Status Code: {response.status_code}")
+            print(f"Response Text: {response.text}")
+
+            if response.status_code == 201:
+                bot.send_message(message.chat.id, "Сервис успешно добавлен без изображения!")
+            else:
+                bot.send_message(message.chat.id, f"Ошибка: {response.status_code}. Ответ: {response.text}")
+        except requests.exceptions.RequestException as e:
+            bot.send_message(message.chat.id, f"Ошибка при отправке данных: {e}")
+    else:
+        bot.send_message(message.chat.id, "Пожалуйста, загрузите изображение или введите 'Нет'.")
 
 @bot.message_handler(func=lambda message: message.text == "Добавить замену масла")
 def prompt_oil_change(message):
@@ -274,7 +410,7 @@ def finalize_oil_change(message, car, mileage_oil, price, name_oil):
     }
 
     # Запрашиваем изображение у пользователя
-    bot.send_message(message.chat.id, "Загрузите изображение квитанции или пропустите, отправив 'Нет'.")
+    bot.send_message(message.chat.id, "Загрузите изображение или пропустите, отправив 'Нет'.")
     bot.register_next_step_handler(message, process_oil_change_image, bot_data)
 
 
@@ -335,6 +471,55 @@ def process_oil_change_image(message, bot_data):
         bot.send_message(message.chat.id, "Пожалуйста, загрузите изображение или введите 'Нет'.")
 
 
+@bot.message_handler(func=lambda message: message.text == "История сервиса")
+def show_service_history(message):
+    chat_id = message.chat.id
+
+    # Проверяем, есть ли выбранный автомобиль
+    if chat_id in user_data and 'selected_car' in user_data[chat_id]:
+        selected_car = user_data[chat_id]['selected_car']
+
+        # Извлекаем данные автомобиля
+        car = get_car_details_from_db(selected_car, chat_id)
+        if car:
+            car_id = car['id']
+            # Делаем запрос на сервер для получения истории сервиса
+            try:
+                response = requests.get(f"{config.API_URL_SERV}?car_id={car_id}")
+                if response.status_code == 200:
+                    service_changes = response.json()
+                    if service_changes:
+                        history_message = "История сервиса:\n\n"
+                        for service_change in service_changes:
+                            try:
+                                # Попробуем преобразовать дату
+                                date_object = datetime.strptime(service_change['date'], '%Y-%m-%dT%H:%M:%S.%fZ')
+                                formatted_date = date_object.strftime('%Y-%m-%d')
+                            except (KeyError, ValueError):
+                                # Если что-то пошло не так, выводим сообщение о неизвестной дате
+                                formatted_date = "Неизвестная дата"
+                                print(service_change)
+
+                            # Формируем сообщение с информацией о сервисе
+                            history_message += (
+                                f"Дата: {formatted_date}\n"  
+                                f"Запчасти: {service_change.get('spare_part', 'Не указаны')}\n"
+                                f"Цена запчасти: {service_change.get('price_spare', 'Не указана')} руб.\n"
+                                f"Цена за работу: {service_change.get('price_work', 'Не указана')} руб.\n"
+                                f"Фото: {service_change.get('images', 'Не загружено') if service_change.get('images') else 'Не загружено'}\n\n"
+                            )
+                        bot.send_message(chat_id, history_message)
+                    else:
+                        bot.send_message(chat_id, "История сервиса отсутствует.")
+                else:
+                    bot.send_message(chat_id, "Ошибка при получении истории сервиса.")
+            except Exception as e:
+                bot.send_message(chat_id, f"Ошибка: {str(e)}")
+        else:
+            bot.send_message(chat_id, "Ошибка: выбранный автомобиль не найден.")
+    else:
+        bot.send_message(chat_id, "Ошибка: выбранный автомобиль не найден.")
+
 
 @bot.message_handler(func=lambda message: message.text == "История замены масла")
 def show_oil_change_history(message):
@@ -346,24 +531,21 @@ def show_oil_change_history(message):
 
         # Извлекаем данные автомобиля
         car = get_car_details_from_db(selected_car, chat_id)
-
         if car:
             car_id = car['id']
             # Делаем запрос на сервер для получения истории замен масла
             try:
                 response = requests.get(f"{config.API_URL_OIL}?car_id={car_id}")
+                print(response)
                 if response.status_code == 200:
                     oil_changes = response.json()
                     if oil_changes:
-                        # Формируем сообщение с историей замен
                         history_message = "История замены масла:\n\n"
                         for oil_change in oil_changes:
-                            # Преобразование даты с учетом миллисекунд
                             date_object = datetime.strptime(oil_change['date'], '%Y-%m-%dT%H:%M:%S.%fZ')
                             formatted_date = date_object.strftime('%Y-%m-%d')
-
                             history_message += (
-                                f"Дата: {formatted_date}\n"  # Отформатированная дата
+                                f"Дата: {formatted_date}\n"  
                                 f"Пробег: {oil_change['millage_oil']}\n"
                                 f"Название масла: {oil_change['name_oil']}\n"
                                 f"Цена: {oil_change['price']} руб.\n"
@@ -382,26 +564,54 @@ def show_oil_change_history(message):
     else:
         bot.send_message(chat_id, "Ошибка: выбранный автомобиль не найден.")
 
-@bot.message_handler(func=lambda message: message.text == "Общая сумма")
-def get_total_oil_expense(message):
-    chat_id = message.chat.id
 
+@bot.message_handler(func=lambda message: message.text == "Общая сумма сервиса")
+def get_total_service_expense(message):
+    chat_id = message.chat.id
     # Проверяем, выбран ли автомобиль
     if chat_id in user_data and 'selected_car' in user_data[chat_id]:
         selected_car = user_data[chat_id]['selected_car']
-
-        # Получаем данные автомобиля (например, ID) для выполнения запроса
         car = get_car_details_from_db(selected_car, chat_id)
 
         if car:
-            # Делаем запрос на сервер для получения истории замен масла для автомобиля
+            url = f"{config.API_URL_SERV}?car_id={car['id']}"
+            response = requests.get(url)
+
+            if response.status_code == 200:
+                servic = response.json()
+                total_expense = sum(
+                    float(service['price_spare']) + float(service['price_work'])
+                    for service in servic if service.get('price_spare') and service.get('price_work')
+                )
+                total_spare = sum(float(service['price_spare']) for service in servic)
+                total_work = sum(float(service['price_work']) for service in servic)
+
+
+
+                bot.send_message(chat_id, f"Общая сумма затрат на сервис: {total_expense:.2f} руб.\n")
+                bot.send_message(chat_id, f"Сумма затрат на запчасти: {total_spare: .2f} руб. \n")
+                bot.send_message(chat_id, f"Сумма затрат на работу: {total_work: .2f} руб. \n")
+            else:
+                bot.send_message(chat_id, "Произошла ошибка при получении данных о сервисе.")
+        else:
+            bot.send_message(chat_id, "Ошибка: выбранный автомобиль не найден.")
+    else:
+        bot.send_message(chat_id, "Ошибка: выбранный автомобиль не найден.")
+
+@bot.message_handler(func=lambda message: message.text == "Общая сумма затрат на масло")
+def get_total_oil_expense(message):
+    chat_id = message.chat.id
+    # Проверяем, выбран ли автомобиль
+    if chat_id in user_data and 'selected_car' in user_data[chat_id]:
+        selected_car = user_data[chat_id]['selected_car']
+        car = get_car_details_from_db(selected_car, chat_id)
+
+        if car:
             url = f"{config.API_URL_OIL}?car_id={car['id']}"
             response = requests.get(url)
 
             if response.status_code == 200:
                 oil_services = response.json()
-
-                # Суммируем затраты на замену масла
                 total_expense = sum(float(service['price']) for service in oil_services)
 
                 bot.send_message(chat_id, f"Общая сумма затрат на замену масла: {total_expense:.2f} руб.")
@@ -420,7 +630,4 @@ def get_car_details_from_db(selected_car, chat_id):
             return car
     return None
 
-
-
-# Запускаем бота
 bot.polling(none_stop=True)

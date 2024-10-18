@@ -31,16 +31,14 @@ class Service(models.Model):
     price_spare = models.DecimalField(max_digits=10, decimal_places=2, verbose_name ='Цена запчасти')
     price_work = models.DecimalField(max_digits=10, decimal_places=2, verbose_name ='Цена работы')
     date = models.DateTimeField(auto_now_add=True)
-    images =models.ImageField(upload_to='service_image/')
+    images =models.ImageField(upload_to='service_image/', blank=True, null=True)
 
-    def __str__(self):
-        return f'{self.service_type} for {self.car} on {self.last_service_date}'
 
 # Записи
 class Note(models.Model):
     car = models.ForeignKey(Car, on_delete=models.CASCADE, related_name='notes')
     content = models.TextField()
-    image = models.ImageField(upload_to='note_image/')
+    image = models.ImageField(upload_to='note_image/', blank=True, null=True)
 
     def __str__(self):
         return f'Note for {self.car}'
@@ -48,4 +46,4 @@ class Note(models.Model):
 class GoodSpare(models.Model):
     car = models.ForeignKey(Car, on_delete=models.CASCADE)
     spare_part = models.TextField()
-    image = models.ImageField(upload_to='good-spare/')
+    image = models.ImageField(upload_to='good-spare/', blank=True, null=True)

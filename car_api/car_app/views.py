@@ -19,6 +19,12 @@ class ServiceViewSet(viewsets.ModelViewSet):
     queryset = Service.objects.all()
     serializer_class = ServiceSerializer
 
+    def get_queryset(self):
+        car_id = self.request.query_params.get('car_id')
+        if car_id:
+            return Service.objects.filter( car_id = car_id)
+        return Service.objects.none()
+
 
 class NoteViewSet(viewsets.ModelViewSet):
     queryset = Note.objects.all()
@@ -28,6 +34,12 @@ class NoteViewSet(viewsets.ModelViewSet):
 class OilViewSet(viewsets.ModelViewSet):
     queryset = Oil_service.objects.all()
     serializer_class = OilSerializer
+
+    def get_queryset(self):
+        car_id = self.request.query_params.get('car_id')
+        if car_id:
+            return Oil_service.objects.filter( car_id = car_id)
+        return Oil_service.objects.none()
 
 
 class GoodSpareViewSet(viewsets.ModelViewSet):
