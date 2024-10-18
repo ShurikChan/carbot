@@ -26,7 +26,8 @@ class CarSerializer(serializers.ModelSerializer):
 class ServiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Service
-        fields = '__all__'
+        fields = ['car', 'spare_part', 'price_spare', 'price_work', 'images', 'date']
+
 
 
 class NoteSerializer(serializers.ModelSerializer):
