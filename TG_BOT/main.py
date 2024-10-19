@@ -135,7 +135,7 @@ def get_year(message, make, model, user_id):
 
 def get_mileage(message, make, model, year, user_id):
     mileage = message.text
-    bot.send_message(message.chat.id, "Введите замену масла (например, 50000):")
+    bot.send_message(message.chat.id, "Введите последнюю замену масла (например, 50000):")
     bot.register_next_step_handler(message, lambda m: process_last_oil(m, make, model, year, mileage, user_id))
 
 
@@ -227,6 +227,49 @@ def oil_change(message):
     else:
         bot.send_message(chat_id, "Ошибка: выбранный автомобиль не найден.")
 
+@bot.message_handler(func=lambda message: message.text == "Заметки")
+def note(message):
+    chat_id = message.chat.id
+
+    # Проверяем, есть ли выбранный автомобиль
+    if chat_id in user_data and 'selected_car' in user_data[chat_id]:
+        selected_car = user_data[chat_id]['selected_car']
+
+        # Получаем информацию о последнем обслуживании
+        car = get_car_details_from_db(selected_car, chat_id)
+
+        if car:
+            markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            markup.add(types.KeyboardButton("Добавить заметку"))
+            markup.add(types.KeyboardButton("Все заметки"))
+            markup.add(types.KeyboardButton("Назад"))
+            bot.send_message(chat_id, "Выберите действие:", reply_markup=markup)
+        else:
+            bot.send_message(chat_id, "Ошибка: выбранный автомобиль не найден.")
+    else:
+        bot.send_message(chat_id, "Ошибка: выбранный автомобиль не найден.")
+
+@bot.message_handler(func=lambda message: message.text == "Хорошие покупки")
+def note(message):
+    chat_id = message.chat.id
+
+    # Проверяем, есть ли выбранный автомобиль
+    if chat_id in user_data and 'selected_car' in user_data[chat_id]:
+        selected_car = user_data[chat_id]['selected_car']
+
+        # Получаем информацию о последнем обслуживании
+        car = get_car_details_from_db(selected_car, chat_id)
+
+        if car:
+            markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            markup.add(types.KeyboardButton("Добавить покупку"))
+            markup.add(types.KeyboardButton("История покупок"))
+            markup.add(types.KeyboardButton("Назад"))
+            bot.send_message(chat_id, "Выберите действие:", reply_markup=markup)
+        else:
+            bot.send_message(chat_id, "Ошибка: выбранный автомобиль не найден.")
+    else:
+        bot.send_message(chat_id, "Ошибка: выбранный автомобиль не найден.")
 
 @bot.message_handler(func=lambda message: message.text == "Сервис")
 def service(message):
@@ -368,6 +411,177 @@ def process_service_image(message, car, spare_part, price_spare, price_work):
     else:
         bot.send_message(message.chat.id, "Пожалуйста, загрузите изображение или введите 'Нет'.")
 
+
+@bot.message_handler(func=lambda message: message.text == "Добавить заметку")
+def prompt_add_note(message):
+    chat_id = message.chat.id
+
+    if chat_id in user_data and 'selected_car' in user_data[chat_id]:
+        selected_car = user_data[chat_id]['selected_car']
+        car = get_car_details_from_db(selected_car, chat_id)
+
+        if car:
+            bot.send_message(chat_id, "Введите текст заметки:")
+            bot.register_next_step_handler(message, lambda m: get_note_content(m, car))
+        else:
+            bot.send_message(chat_id, "Ошибка: выбранный автомобиль не найден.")
+    else:
+        bot.send_message(chat_id, "Ошибка: выбранный автомобиль не найден.")
+
+
+def get_note_content(message, car):
+    note_content = message.text
+    bot.send_message(message.chat.id, "Загрузите изображение для заметки или отправьте 'Нет', чтобы пропустить.")
+    bot.register_next_step_handler(message, lambda m: process_note_image(m, car, note_content))
+
+
+def process_note_image(message, car, note_content):
+    url = 'http://127.0.0.1:8000/notes/'  # URL для обработки заметки
+
+    bot_data = {
+        'car_id': car['id'],
+        'content': note_content,
+    }
+
+    # Проверяем, отправил ли пользователь изображение
+    if message.content_type == 'photo':
+        try:
+            # Получаем файл изображения
+            file_info = bot.get_file(message.photo[-1].file_id)
+            downloaded_file = bot.download_file(file_info.file_path)
+
+            file_extension = file_info.file_path.split('.')[-1]
+            filename = f"note_image.{file_extension}"
+
+            # Сохраняем изображение локально
+            with open(filename, 'wb') as new_file:
+                new_file.write(downloaded_file)
+
+            # Открываем изображение для отправки
+            with open(filename, 'rb') as image_file:
+                files = {'image': (filename, image_file, f"image/{file_extension}")}
+                data = {
+                    'car': bot_data['car_id'],
+                    'content': bot_data['content'],
+                }
+
+                # Отправляем данные на сервер
+                response = requests.post(url, data=data, files=files)
+                print(f"Response Status Code: {response.status_code}")
+                print(f"Response Text: {response.text}")
+
+                if response.status_code == 201:
+                    bot.send_message(message.chat.id, "Заметка успешно добавлена с изображением!")
+                else:
+                    bot.send_message(message.chat.id, f"Ошибка: {response.status_code}. Ответ: {response.text}")
+        except Exception as e:
+            bot.send_message(message.chat.id, f"Ошибка при обработке изображения: {e}")
+            print(f"Ошибка при обработке изображения: {e}")
+    elif message.text.lower() == 'нет':
+        # Если пользователь не отправляет изображение, отправляем данные без файла
+        data = {
+            'car': bot_data['car_id'],
+            'content': bot_data['content'],
+        }
+        try:
+            response = requests.post(url, json=data)
+            print(f"Response Status Code: {response.status_code}")
+            print(f"Response Text: {response.text}")
+
+            if response.status_code == 201:
+                bot.send_message(message.chat.id, "Заметка успешно добавлена без изображения!")
+            else:
+                bot.send_message(message.chat.id, f"Ошибка: {response.status_code}. Ответ: {response.text}")
+        except requests.exceptions.RequestException as e:
+            bot.send_message(message.chat.id, f"Ошибка при отправке данных: {e}")
+    else:
+        bot.send_message(message.chat.id, "Пожалуйста, загрузите изображение или введите 'Нет'.")
+
+
+@bot.message_handler(func=lambda message: message.text == "Добавить покупку")
+def prompt_add_purchase(message):
+    chat_id = message.chat.id
+
+    if chat_id in user_data and 'selected_car' in user_data[chat_id]:
+        selected_car = user_data[chat_id]['selected_car']
+        car = get_car_details_from_db(selected_car, chat_id)
+
+        if car:
+            bot.send_message(chat_id, "Введите название запчасти для покупки:")
+            bot.register_next_step_handler(message, lambda m: get_spare_part_for_purchase(m, car))
+        else:
+            bot.send_message(chat_id, "Ошибка: выбранный автомобиль не найден.")
+    else:
+        bot.send_message(chat_id, "Ошибка: выбранный автомобиль не найден.")
+
+def get_spare_part_for_purchase(message, car):
+    spare_part = message.text
+    bot.send_message(message.chat.id, "Загрузите изображение для покупки или отправьте 'Нет', чтобы пропустить.")
+    bot.register_next_step_handler(message, lambda m: process_purchase_image(m, car, spare_part))
+
+def process_purchase_image(message, car, spare_part):
+    url = 'http://127.0.0.1:8000/good-spare/'  # URL для обработки покупки
+
+    bot_data = {
+        'car_id': car['id'],
+        'spare_part': spare_part,
+    }
+
+    # Проверяем, отправил ли пользователь изображение
+    if message.content_type == 'photo':
+        try:
+            # Получаем файл изображения
+            file_info = bot.get_file(message.photo[-1].file_id)
+            downloaded_file = bot.download_file(file_info.file_path)
+
+            file_extension = file_info.file_path.split('.')[-1]
+            filename = f"good_spare.{file_extension}"
+
+            # Сохраняем изображение локально
+            with open(filename, 'wb') as new_file:
+                new_file.write(downloaded_file)
+
+            # Открываем изображение для отправки
+            with open(filename, 'rb') as image_file:
+                files = {'image': (filename, image_file, f"image/{file_extension}")}
+                data = {
+                    'car': bot_data['car_id'],
+                    'spare_part': bot_data['spare_part'],
+                }
+
+                # Отправляем данные на сервер
+                response = requests.post(url, data=data, files=files)
+                print(f"Response Status Code: {response.status_code}")
+                print(f"Response Text: {response.text}")
+
+                if response.status_code == 201:
+                    bot.send_message(message.chat.id, "Покупка успешно добавлена с изображением!")
+                else:
+                    bot.send_message(message.chat.id, f"Ошибка: {response.status_code}. Ответ: {response.text}")
+        except Exception as e:
+            bot.send_message(message.chat.id, f"Ошибка при обработке изображения: {e}")
+            print(f"Ошибка при обработке изображения: {e}")
+    elif message.text.lower() == 'нет':
+        # Если пользователь не отправляет изображение, отправляем данные без файла
+        data = {
+            'car': bot_data['car_id'],
+            'spare_part': bot_data['spare_part'],
+        }
+        try:
+            response = requests.post(url, json=data)
+            print(f"Response Status Code: {response.status_code}")
+            print(f"Response Text: {response.text}")
+
+            if response.status_code == 201:
+                bot.send_message(message.chat.id, "Покупка успешно добавлена без изображения!")
+            else:
+                bot.send_message(message.chat.id, f"Ошибка: {response.status_code}. Ответ: {response.text}")
+        except requests.exceptions.RequestException as e:
+            bot.send_message(message.chat.id, f"Ошибка при отправке данных: {e}")
+    else:
+        bot.send_message(message.chat.id, "Пожалуйста, загрузите изображение или введите 'Нет'.")
+
+
 @bot.message_handler(func=lambda message: message.text == "Добавить замену масла")
 def prompt_oil_change(message):
     chat_id = message.chat.id
@@ -442,7 +656,7 @@ def process_oil_change_image(message, bot_data):
                 print(f"Response Status Code: {response.status_code}")
                 print(f"Response Text: {response.text}")
 
-                if response.status_code == 200:
+                if response.status_code == 201:
                     bot.send_message(message.chat.id, "Замена масла успешно добавлена!")
                 else:
                     print(f"Ошибка: {response.status_code}. Ответ: {response.text}")
